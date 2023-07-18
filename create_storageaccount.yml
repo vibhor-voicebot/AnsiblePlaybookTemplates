@@ -1,0 +1,19 @@
+---
+- name: Create Azure Storage Account and File Share
+  hosts: localhost
+  gather_facts: false
+
+  tasks:
+
+    - name: Create Azure Storage Account
+      shell: az storage account create --name "{{ storage_account_name }}" --resource-group "{{ resource_group }}" --location "{{ location }}" --kind "{{ kind }}"  --sku "{{ sku }}"
+      changed_when: false
+
+    - name: Get Azure Storage Account Key
+      shell: az storage account keys list --account-name "{{ storage_account_name }}" --resource-group "{{ resource_group }}" --query "[0].value" -o tsv
+      register: storage_account_key
+
+    - name: Create Azure File Share
+      shell: az storage share create --account-name "{{ storage_account_name }}" --account-key "{{ storage_account_key.stdout }}" --name "{{ file_share_name }}"
+      changed_when: false
+

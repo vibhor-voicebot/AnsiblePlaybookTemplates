@@ -1,0 +1,13 @@
+---
+- name: Trigger GitHub Action for .NET Core app
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  tasks:
+    - name: Trigger GitHub Action workflow for dotnetcore on azure as webapp deployment
+      shell: /home/azureuser/dotnetcore/dployazure.sh "{{ filename }}" 
+      register: github_azurewebapp_deploy_status
+
+
+

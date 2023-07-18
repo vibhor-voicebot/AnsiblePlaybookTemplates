@@ -1,0 +1,42 @@
+- name: Generate report on Azure Storage File Share size
+  hosts: localhost
+  connection: local 
+  gather_facts: false
+
+  tasks:
+    - name: Create Dir on Storage container
+      shell: az storage directory create --name "{{ dir_name }}" --share-name "{{ file_share_name }}"  --account-name "{{ storage_account_name }}" --account-key "{{ storage_account_key }}"
+      register: directory_create_status
+
+    - name: Get File Share Size (before upload)
+      shell: az storage share stats  --name "{{ file_share_name }}" --account-name "{{ storage_account_name }}" --account-key "{{ storage_account_key }}"
+      register: before_upload_size
+
+    - name: Upload file to File Share
+      shell: az storage file upload --source "{{ local_file_path }}" --share-name "{{ file_share_name }}" -p "{{ dir_name }}" --account-name "{{ storage_account_name }}" --account-key "{{ storage_account_key }}"
+
+    - name: Get File Share Size (after upload)
+      shell: az storage share stats  --name "{{ file_share_name }}" --account-name "{{ storage_account_name }}" --account-key "{{ storage_account_key }}"
+      register: after_upload_size
+
+    - name: Get initial file share properties
+      shell: az storage share show --name "{{ file_share_name }}" --account-name "{{ storage_account_name }}" --query "{quota:properties.quota}" --output json
+      register: initial_quota_report
+
+    - name: Update file share quota
+      shell: az storage share update --name "{{ file_share_name }}" --account-name "{{ storage_account_name }}" --quota "{{ quota }}"
+      register: quota_update_status
+
+    - name: Get updated file share properties
+      shell: az storage share show --name "{{ file_share_name }}" --account-name "{{ storage_account_name }}" --query "{quota:properties.quota}" --output json
+      register: updated_quota_report
+
+
+    - name: Generate File Size & Quota Report (before upload)
+      debug:
+        msg: "File Share Size (before upload): {{ before_upload_size.stdout | from_json }} | File Share Quota (before update): {{ initial_quota_report.stdout | from_json }}"
+
+    - name: Generate File size Report (after upload)
+      debug:
+        msg: "File Share Size (after upload): {{ after_upload_size.stdout | from_json }} | File Share Quota (after update): {{ updated_quota_report.stdout | from_json }}"
+

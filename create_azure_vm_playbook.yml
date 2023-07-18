@@ -1,0 +1,140 @@
+---
+- name: Create Azure Linux VM
+  hosts: localhost
+  connection: local
+  gather_facts: no
+
+  vars:
+    resource_group: "OpenAIGPTIAC"
+    location: "eastus"
+    vm_name: "openiautomationvm"
+    vm_size: "Standard_DS2_v2"
+    admin_username: "admin"
+    admin_password: "Junemonth@2023"
+    image_offer: "UbuntuServer"
+    image_publisher: "Canonical"
+    image_sku: "18.04-LTS"
+    python_packages:
+      - python3
+      - python3-pip
+    dotnet_sdk_version: "5.0"
+    java_packages:
+      - default-jre
+      - default-jdk
+    docker_packages:
+      - docker.io
+
+  tasks:
+    - name: Logging to Azure using SPN
+      shell: "az login --service-principal -p mJZ8Q~_EHTiXETyR1pPIzHkstFwDFLmZ5DpWhc-s -u 4eb53a96-67b3-4792-a1df-9f87d99dd550 -t a8fe4acc-1aab-4b3e-a05d-c33b5c88f39a --allow-no-subscriptions"
+      register: azlogin
+    - debug: var=azlogin.stdout
+
+      
+    - name: Create resource group
+      azure.azcollection.azure_rm_resourcegroup:
+      name: "{{ resource_group }}"
+      location: "{{ location }}"
+      state: present 
+      register: rg_result
+
+    - name: Create virtual network
+      azure.azcollection.azure_rm_virtualnetwork:
+        resource_group: "{{ resource_group }}"
+        name: "{{ vm_name }}-vnet"
+        address_prefixes: "10.0.0.0/16"
+      register: vnet_result
+
+    - name: Create subnet
+      azure.azcollection.azure_rm_subnet:
+        resource_group: "{{ resource_group }}"
+        virtual_network_name: "{{ vm_name }}-vnet"
+        name: "{{ vm_name }}-subnet"
+        address_prefix: "10.0.0.0/24"
+      register: subnet_result
+
+    - name: Create public IP address
+      azure.azcollection.azure_rm_publicipaddress:
+        resource_group: "{{ resource_group }}"
+        allocation_method: "Dynamic"
+        name: "{{ vm_name }}-publicip"
+      register: publicip_result
+
+    - name: Create network security group
+      azure.azcollection.azure_rm_securitygroup:
+        resource_group: "{{ resource_group }}"
+        name: "{{ vm_name }}-nsg"
+        rules:
+          - name: "Allow SSH"
+            protocol: Tcp
+            destination_port_range: 22
+            access: Allow
+            priority: 1001
+          - name: "Allow HTTP"
+            protocol: Tcp
+            destination_port_range: 80
+            access: Allow
+            priority: 1002
+      register: nsg_result
+
+    - name: Create network interface
+      azure.azcollection.azure_rm_networkinterface:
+        resource_group: "{{ resource_group }}"
+        name: "{{ vm_name }}-nic"
+        virtual_network_name: "{{ vm_name }}-vnet"
+        subnet_name: "{{ vm_name }}-subnet"
+        public_ip_name: "{{ vm_name }}-publicip"
+        security_group_name: "{{ vm_name }}-nsg"
+      register: nic_result
+
+    - name: Create virtual machine
+      azure.azcollection.azure_rm_virtualmachine:
+        resource_group: "{{ resource_group }}"
+        name: "{{ vm_name }}"
+        vm_size: "{{ vm_size }}"
+        admin_username: "{{ admin_username }}"
+        admin_password: "{{ admin_password }}"
+        image:
+          offer: "{{ image_offer }}"
+          publisher: "{{ image_publisher }}"
+          sku: "{{ image_sku }}"
+          version: "latest"
+        network_interfaces:
+          - "{{ nic_result.id }}"
+      register: vm_result
+
+    - name: Install Python packages
+      ansible.builtin.pip:
+        name: "{{ item }}"
+      with_items: "{{ python_packages }}"
+
+    - name: Install .NET SDK
+      ansible.builtin.get_url:
+        url: "https://download.visualstudio.microsoft.com/download/pr/6ef5b0ad-5db7-4425-82d2-8984ed3f6d48/8f1c2f91c5e8a53ef48e27323f2e72c5/dotnet-sdk-{{ dotnet_sdk_version }}-linux-x64.tar.gz"
+        dest: "/tmp/dotnet-sdk.tar.gz"
+
+    - name: Extract .NET SDK
+      ansible.builtin.unarchive:
+        src: "/tmp/dotnet-sdk.tar.gz"
+        dest: "/opt/dotnet"
+        remote_src: yes
+        creates: "/opt/dotnet/shared/Microsoft.NETCore.App/{{ dotnet_sdk_version }}"
+
+    - name: Set .NET SDK environment variables
+      ansible.builtin.lineinfile:
+        path: "{{ item }}"
+        line: "export DOTNET_ROOT=/opt/dotnet"
+      with_items:
+        - "/etc/environment"
+        - "/etc/profile.d/dotnet.sh"
+
+    - name: Install Java packages
+      ansible.builtin.apt:
+        name: "{{ item }}"
+      with_items: "{{ java_packages }}"
+
+    - name: Install Docker packages
+      ansible.builtin.apt:
+        name: "{{ item }}"
+      with_items: "{{ docker_packages }}"
+

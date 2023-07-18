@@ -1,0 +1,42 @@
+---
+- name: Upgrade JDK version on Azure VM
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+
+    - name: Set VM hostvars
+      set_fact:
+        vm_ip: "{{ vm_ip }}"
+        vm_username: "{{ admin_username }}"
+        vm_password: "{{  admin_password  }}"
+        ansible_ssh_private_key_file: ""
+                    
+    - name: Get JDK package information before upgrade
+      shell: dpkg-query -l openjdk-11-jdk
+      register: jdk_package_before
+      changed_when: false
+
+    - name: Upgrade JDK
+      #apt:
+      #name: "{{ jdk_version }}"
+      #state: present
+      shell: "sudo apt install {{ jdk_version }} -y --no-install-recommends"
+      args:
+       executable: /bin/bash
+
+    - name: Get JDK package information after upgrade
+      shell: dpkg-query -l "{{ jdk_version }}"
+      register: jdk_package_after
+      changed_when: false
+
+    - name: Print JDK package before upgrade
+      debug:
+        var: jdk_package_before.stdout_lines
+      changed_when: false
+
+    - name: Print JDK package after upgrade
+      debug:
+        var: jdk_package_after.stdout_lines
+      changed_when: false
+

@@ -1,0 +1,80 @@
+---
+- name: Create VMware VM and Install NAS Volume
+  hosts: localhost
+  gather_facts: false
+  #nas_iso_path: "/path/to/nas-volume.iso"
+
+  tasks:
+    - name: Create the virtual machine
+      vmware_guest:
+        hostname: "{{ vmware_hostname }}"
+        username: "{{ vmware_username }}"
+        password: "{{ vmware_password }}"
+        datacenter: "{{ vmware_datacenter }}"
+        validate_certs: false
+        name: "{{ vm_name }}"
+        state: present
+        guest_id: "{{ vm_guest_os }}"
+      register: vm_creation_result
+
+    - name: Power on the virtual machine
+      vmware_guest_powerstate:
+        hostname: "{{ vmware_hostname }}"
+        username: "{{ vmware_username }}"
+        password: "{{ vmware_password }}"
+        datacenter: "{{ vmware_datacenter }}"
+        validate_certs: false
+        name: "{{ vm_name }}"
+        state: powered_on
+      when: vm_creation_result.changed
+
+    - name: Wait for the VM to boot up
+      pause:
+        seconds: 10
+
+    - name: Install NAS volume
+      vmware_tools:
+        hostname: "{{ vmware_hostname }}"
+        username: "{{ vmware_username }}"
+        password: "{{ vmware_password }}"
+        datacenter: "{{ vmware_datacenter }}"
+        validate_certs: false
+        state: present
+        vm_id: "{{ vm_name }}"
+
+    - name: Mount NAS volume ISO
+      vmware_guest_tools_wait:
+        hostname: "{{ vmware_hostname }}"
+        username: "{{ vmware_username }}"
+        password: "{{ vmware_password }}"
+        datacenter: "{{ vmware_datacenter }}"
+        validate_certs: false
+        vm_id: "{{ vm_name }}"
+        timeout: 300  # Increase timeout if needed
+      register: vm_tools_result
+
+    - name: Perform additional configuration or installation steps
+
+    - name: Unmount NAS volume ISO
+      vmware_guest_tools_wait:
+        hostname: "{{ vmware_hostname }}"
+        username: "{{ vmware_username }}"
+        password: "{{ vmware_password }}"
+        datacenter: "{{ vmware_datacenter }}"
+        validate_certs: false
+        vm_id: "{{ vm_name }}"
+        timeout: 300  # Increase timeout if needed
+        state: unmounted
+      when: vm_tools_result.changed
+
+    - name: Power off the virtual machine
+      vmware_guest_powerstate:
+        hostname: "{{ vmware_hostname }}"
+        username: "{{ vmware_username }}"
+        password: "{{ vmware_password }}"
+        datacenter: "{{ vmware_datacenter }}"
+        validate_certs: false
+        name: "{{ vm_name }}"
+        state: powered_off
+      when: vm_creation_result.changed
+

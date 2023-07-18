@@ -1,0 +1,71 @@
+---
+- name: Create Azure Linux VM and install dependencies
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    packages:
+        - python3
+        - openjdk-11-jdk
+        - docker.io
+
+  tasks:
+    - name: Create resource group
+      command: az group create --name {{ resource_group }} --location {{ location }}
+      register: rg_result
+      changed_when: rg_result.rc == 0
+
+    - name: Create VM
+      command: az vm create --resource-group {{ resource_group }} --name {{ vm_name }} --image {{ vm_image }}  --admin-username {{ admin_username }} --admin-password {{ admin_password }} --size {{ vm_size }} --generate-ssh-keys
+      register: vm_creation_output
+      changed_when: false
+
+
+    - name: Extract public IP address from VM
+      set_fact:
+        parsed_json: "{{ vm_creation_output.stdout  | from_json }}"
+
+
+    - name: Set VM hostvars
+      set_fact:
+        vm_ip: "{{ parsed_json.publicIpAddress  }}"
+        vm_username: "{{ admin_username }}"
+        vm_password: "{{  admin_password  }}"
+        ansible_ssh_private_key_file: ""
+
+    - name: Get public IP address of the VM
+      command: az vm show -d --resource-group {{ resource_group }} --name {{ vm_name }} --query publicIps --output tsv
+      register: vm_public_ip
+      changed_when: false
+
+
+    - name: Install packages on AzureVM
+      shell: "sudo apt  install  -y {{ packages | join(' ') }}"
+      args:
+       executable: /bin/bash
+
+
+    - name: Check if package1 is installed
+      command: dpkg -s python3
+      register: package1_status
+      ignore_errors: true
+
+    - name: Check if package2 is installed
+      command: dpkg -s openjdk-11-jdk
+      register: package2_status
+      ignore_errors: true
+
+    - name: Check if package3 is installed
+      command: dpkg -s docker.io
+      register: package3_status
+
+
+    - name: Print package installation status
+      debug:
+        msg: |
+          package1: {{ package1_status.stdout }}
+          package2: {{ package2_status.stdout }}
+          package3: {{ package3_status.stdout }}
+
+

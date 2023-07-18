@@ -1,0 +1,63 @@
+---
+- name: Create Azure Storage Container with Disaster Recovery
+  hosts: localhost
+  gather_facts: false
+
+
+  tasks:
+
+          #- name: Login to Azure
+          #azure.azcollection.azure_login:
+          #environment: AzureCloud
+    - name: Check if Primary Storage Container exists
+      command: az storage container show --name "{{ primary_container_name }}" --account-name "{{ primary_account_name }}" --account-key "{{ primary_account_key }}"
+      register: primary_container_exists
+      failed_when: false
+      changed_when: false
+
+
+    - name: Create Primary Storage Container
+      command: az storage container create --name "{{ primary_container_name }}" --account-name "{{ primary_account_name }}" --account-key "{{ primary_account_key }}" --fail-on-exist
+      register: primary_container_creation_result
+      when: primary_container_exists.rc != 0
+
+    - name: Check if Secondary Storage Container exists
+      command: az storage container show --name "{{ secondary_container_name }}" --account-name "{{ secondary_account_name }}" --account-key "{{ secondary_account_key }}"
+      register: secondary_container_exists
+      failed_when: false
+      changed_when: false
+
+    - name: Create Secondary Storage Container
+      command: az storage container create --name "{{ secondary_container_name }}" --account-name "{{ secondary_account_name }}" --account-key "{{ secondary_account_key }}" --fail-on-exist
+      register: secondary_container_creation_result
+      when: secondary_container_exists.rc != 0
+
+
+    - name: Create policy.json template
+      template:
+        src: policy.json.j2
+        dest: policy.json      
+
+
+    - name: Create Failover Policy
+      command: az storage account or-policy create --account-name "{{ primary_account_name }}" --resource-group "{{ resource_group }}" --policy  "@policy.json"
+      args:
+        creates: policy.json
+      changed_when: false
+      delegate_to: localhost
+
+
+    - name: Set Failover Policy on Secondary Storage Account
+      command: az storage account or-policy update --account-name "{{ secondary_account_name }}" --resource-group "{{ resource_group }}" --source-account "{{ primary_account_name }}" --destination-container "{{ secondary_container_name }}" --destination-account "{{ secondary_account_name }}" --rule-set "@policy.json"
+      args:
+        creates: policy.json
+      changed_when: false
+      delegate_to: localhost      
+
+    - name: Print container creation results
+      debug:
+        var: item
+      loop:
+        - primary_container_creation_result
+        - secondary_container_creation_result
+

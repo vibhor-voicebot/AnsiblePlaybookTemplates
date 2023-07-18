@@ -1,197 +1,70 @@
-<!DOCTYPE html>
 <html>
+
 <head>
-  <link rel="stylesheet" type="text/css" href="style.css">
-  <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
-  <script>
-    $(document).ready(function() {
-      $("#chatButton").click(function() {
-        $("#chatContainer").toggleClass("active");
-      });
 
-      $("#closeButton").click(function() {
-        $("#chatContainer").removeClass("active");
-      });
+	<!-- seo related -->
+	<title>GenAI Chatbot</title>
 
-      $("#textInput").keypress(function(e) {
-        if (e.which == 13) {
-          getBotResponse();
-        }
-      });
+	<!-- meta related -->
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
 
-      $("#buttonInput").click(function() {
-        getBotResponse();
-      });
+	<!-- vendor css & style files -->
+	<link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css" rel="stylesheet">
+	<link href="https://fonts.googleapis.com/css?family=Josefin+Sans:300|Open+Sans:300|Oxygen|Material+Icons"
+		rel="stylesheet">
+	<link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.6/css/bootstrap.min.css">
 
-	    // Rest of your code...
-    });
+	<!-- custom css -->
+	<link rel="stylesheet" type="text/css" href="static/main.css">
 
-    function getBotResponse() {
-      var rawText = $("#textInput").val();
-      var userHtml = '<div class="message user-message">' + rawText + '</div>';
-      $("#textInput").val("");
-      $("#chatBody").append(userHtml);
-      scrollToBottom();
-
-      $.get("/get", { msg: rawText }).done(function(data) {
-      data = data.replace(/\n/g, "<br>");
-      //data = data.replace(/-/g, "<b>**</b>");	      
-	      //alert (data);
-//	      var output_text = '';
-//for (i = 0; i < data.length; ++i) {
-//   if (data.charAt(i) == '\n') {
-//       output_text += '<br/'>
-//    }}
-	var botHtml = '<div class="message bot-message">' + data + '</div>';
-        //alert(botHtml)
-	$("#chatBody").append(botHtml);
-        scrollToBottom();
-      });
-    }
-
-    function scrollToBottom() {
-      $("#chatBody").scrollTop($("#chatBody")[0].scrollHeight);
-    }
-
-
-// Rest of your code...
-  </script>
-  <style>
-    /* Add your custom styles here */
-
-    body {
-            background-image: url('https://knowhow.distrelec.com/wp-content/uploads/2022/09/Top-10-Healthcare-Tech-1920x800.jpg');
-            background-repeat: no-repeat;
-            background-size: cover;
-        }
-
-    #chatContainer {
-      position: fixed;
-      bottom: 20px;
-      right: 20px;
-      width: 900px;
-      height: 600px;
-      background-color: #f9f9f9;
-      border-radius: 5px;
-      box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
-      transition: transform 0.3s ease;
-      transform: translateX(950px);
-    }
-
-    #chatContainer.active {
-      transform: translateX(0);
-    }
-
-    #chatHeader {
-      background-color: #007bff;
-      color: #fff;
-      padding: 10px;
-      border-top-left-radius: 5px;
-      border-top-right-radius: 5px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-    }
-
-    #chatBody {
-      height: 400px;
-      padding: 10px;
-      overflow-y: auto;
-    }
-
-    #closeButton {
-      color: #fff;
-      cursor: pointer;
-    }
-
-    #textInput {
-      width: 100%;
-      padding: 10px;
-      font-size: 16px;
-      border: none;
-      border-top: 1px solid #ddd;
-    }
-
-    #buttonInput {
-      width: 100%;
-      padding: 10px;
-      font-size: 16px;
-      border: none;
-      border-top: 1px solid #ddd;
-      background-color: #007bff;
-      color: #fff;
-      cursor: pointer;
-    }
-    
-
-    #chatButton {
-      position: fixed;
-      bottom: 20px;
-      right: 20px;
-      width: 60px;
-      height: 60px;
-      border-radius: 50%;
-      background-color: #007bff;
-      color: #fff;
-      font-size: 24px;
-      text-align: center;
-      line-height: 60px;
-      cursor: pointer;
-      z-index: 999;
-    }
-
-    .message {
-      padding: 10px;
-      margin-bottom: 10px;
-    }
-
-    .user-message {
-      background-color: #f1f0f0;
-      color: #333;
-      border-radius: 5px;
-      float: left;
-      clear: both;
-      max-width: 60%;
-    }
-
-    .bot-message {
-      background-color: #e5eaf5;
-      color: #333;
-      border-radius: 5px;
-      float: right;
-      clear: both;
-      max-width: 60%;
-    }
-
-
-  </style>
 </head>
+
 <body>
-  <div id="chatContainer">
-    <div id="chatHeader">
-      <h2>GenAI ChatBot</h2>
-      <span id="closeButton">&times;</span>
-    </div>
-    <div id="chatBody">
-      <!-- Chat messages go here -->
-    </div>
-    <input id="textInput" type="text" name="msg" placeholder="Type your message">
-    <button id="buttonInput">Send</button>
-  </div>
-  <div id="chatButton">&#9998;</div>
+
+	<div class="container">
+
+		<div class="row padded_row">
+
+			<!-- right side content -->
+			<div class="col-md-7">
+
+				<div class="chat_window">
+
+					<div class="top_menu">
+						<div class="title">GenAIBOT Genie</div>
+					</div>
+
+					<!-- dynamically rendered -->
+					<ul class="messages"></ul>
+
+					<!-- input -->
+					<div class="bottom_wrapper">
+						<input id="msg_input" placeholder="Say Hi to begin chat..." />
+						<div id="send_button" class="app_button_1">Send</div>
+					</div>
+
+				</div>
+
+			</div>
+
+
+
+
+
+
+		</div>
+
+	</div>
+
+	<!-- vendor script files -->
+	<script src="https://code.jquery.com/jquery-2.2.4.min.js"></script>
+	<script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.6/js/bootstrap.min.js">
+	</script>
+
+	<!-- custom scripts -->
+	<script src="static/main.js"></script>
 </body>
+
 </html>
-
-
-
-
-
-
-
-
-
-
-
-
-
-

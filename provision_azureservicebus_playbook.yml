@@ -1,0 +1,26 @@
+---
+- name: Create Azure Service Bus
+  hosts: localhost
+  gather_facts: false
+
+  tasks:
+          #    - name: Install Azure CLI extension for Service Bus
+          # command: az extension add --name servicebus
+
+          #- name: Check if Azure CLI extension for Service Bus is already installed
+          #command: az extension show --name servicebus
+          #register: extension_check
+          #changed_when: false
+          #failed_when: false
+
+    - name: Create Resource Group
+      command: az group create --name "{{ resource_group_name }}" --location "{{ resource_group_location }}"
+
+    - name: Create Azure Service Bus Namespace
+      command: az servicebus namespace create --resource-group "{{ resource_group_name }}" --name "{{ service_bus_namespace_name }}" --location "{{ resource_group_location }}"
+
+    - name: Create Azure Service Bus Queue
+      command: az servicebus queue create --resource-group "{{ resource_group_name }}" --namespace-name "{{ service_bus_namespace_name }}" --name "{{ service_bus_queue_name }}"
+
+    - name: Create Azure Service Bus Topic
+      command: az servicebus topic create --resource-group "{{ resource_group_name }}" --namespace-name "{{ service_bus_namespace_name }}" --name "{{ service_bus_topic_name }}"

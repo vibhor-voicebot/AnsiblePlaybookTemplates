@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <link rel="stylesheet" type="text/css" href="style.css">
+  <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
+  <script>
+    $(document).ready(function() {
+      $("#chatButton").click(function() {
+        $("#chatContainer").toggleClass("active");
+      });
+
+      $("#closeButton").click(function() {
+        $("#chatContainer").removeClass("active");
+      });
+
+      $("#textInput").keypress(function(e) {
+        if (e.which == 13) {
+          getBotResponse();
+        }
+      });
+
+      $("#buttonInput").click(function() {
+        getBotResponse();
+      });
+
+	    // Rest of your code...
+    });
+
+    function getBotResponse() {
+      var rawText = $("#textInput").val();
+      var userHtml = '<div class="message user-message">' + rawText + '</div>';
+      $("#textInput").val("");
+      $("#chatBody").append(userHtml);
+      scrollToBottom();
+
+      $.get("/get", { msg: rawText }).done(function(data) {
+      data = data.replace(/\n/g, "<br>");
+      //data = data.replace(/-/g, "<b>**</b>");	      
+	      //alert (data);
+//	      var output_text = '';
+//for (i = 0; i < data.length; ++i) {
+//   if (data.charAt(i) == '\n') {
+//       output_text += '<br/'>
+//    }}
+	var botHtml = '<div class="message bot-message">' + data + '</div>';
+        //alert(botHtml)
+	$("#chatBody").append(botHtml);
+        scrollToBottom();
+      });
+    }
+
+    function scrollToBottom() {
+      $("#chatBody").scrollTop($("#chatBody")[0].scrollHeight);
+    }
+
+
+// Rest of your code...
+  </script>
+  <style>
+    /* Add your custom styles here */
+
+    body {
+            background-image: url('https://knowhow.distrelec.com/wp-content/uploads/2022/09/Top-10-Healthcare-Tech-1920x800.jpg');
+            background-repeat: no-repeat;
+            background-size: cover;
+        }
+
+    #chatContainer {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      width: 900px;
+      height: 600px;
+      background-color: #f9f9f9;
+      border-radius: 5px;
+      box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+      transition: transform 0.3s ease;
+      transform: translateX(950px);
+    }
+
+    #chatContainer.active {
+      transform: translateX(0);
+    }
+
+    #chatHeader {
+      background-color: #007bff;
+      color: #fff;
+      padding: 10px;
+      border-top-left-radius: 5px;
+      border-top-right-radius: 5px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    #chatBody {
+      height: 400px;
+      padding: 10px;
+      overflow-y: auto;
+    }
+
+    #closeButton {
+      color: #fff;
+      cursor: pointer;
+    }
+
+    #textInput {
+      width: 100%;
+      padding: 10px;
+      font-size: 16px;
+      border: none;
+      border-top: 1px solid #ddd;
+    }
+
+    #buttonInput {
+      width: 100%;
+      padding: 10px;
+      font-size: 16px;
+      border: none;
+      border-top: 1px solid #ddd;
+      background-color: #007bff;
+      color: #fff;
+      cursor: pointer;
+    }
+    
+
+    #chatButton {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      width: 60px;
+      height: 60px;
+      border-radius: 50%;
+      background-color: #007bff;
+      color: #fff;
+      font-size: 24px;
+      text-align: center;
+      line-height: 60px;
+      cursor: pointer;
+      z-index: 999;
+    }
+
+    .message {
+      padding: 10px;
+      margin-bottom: 10px;
+    }
+
+    .user-message {
+      background-color: #f1f0f0;
+      color: #333;
+      border-radius: 5px;
+      float: left;
+      clear: both;
+      max-width: 60%;
+    }
+
+    .bot-message {
+      background-color: #e5eaf5;
+      color: #333;
+      border-radius: 5px;
+      float: right;
+      clear: both;
+      max-width: 60%;
+    }
+
+
+  </style>
+</head>
+<body>
+  <div id="chatContainer">
+    <div id="chatHeader">
+      <h2>GenAI ChatBot</h2>
+      <span id="closeButton">&times;</span>
+    </div>
+    <div id="chatBody">
+      <!-- Chat messages go here -->
+    </div>
+    <input id="textInput" type="text" name="msg" placeholder="Type your message">
+    <button id="buttonInput">Send</button>
+  </div>
+  <div id="chatButton">&#9998;</div>
+</body>
+</html>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
