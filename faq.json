@@ -1,0 +1,13 @@
+{
+  "data": [
+    {
+      "question": "Do MSIM has any existing DevOps Automation?",
+      "answer": "Yes, its integated with TeamCity & Jenkins CI/CD as a self-service tooling"
+    },
+    {
+      "question": "Do MSIM has any existing Reliablity Operations in action?",
+      "answer": "RO needs to be more fungible & viable in MSIM that can be achieved by using WMTelemtry"
+    }
+  ]
+}
+
