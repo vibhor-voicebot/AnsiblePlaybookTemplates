@@ -143,7 +143,7 @@ def get_bot_response():
     headers = {'Accept' : 'application/json', 'Content-Type' : 'application/json'}
     resp = requests.post(url="https://genpactaiservice.azurewebsites.net/invokeopenapi", json=json_data, headers=headers, verify=False)
     #resp = []
-    #resp = requests.post(url="https://genaiknowledgebase.eastus.cloudapp.azure.com:5000/invokeopenapi", json=json_data, headers=headers, verify=False)
+    #resp = requests.post(url="https://localhost:5000/invokeopenapi", json=json_data, headers=headers, verify=False)
     response_dict = json.loads(resp.text)
     response_list = response_dict['output']
     orig_response_list = response_list
