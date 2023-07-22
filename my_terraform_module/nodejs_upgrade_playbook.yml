@@ -1,0 +1,71 @@
+---
+      
+
+
+- name: Add the new VM to the host group
+  hosts: localhost
+  tasks:
+    - name: Add the new VM to the host group
+      add_host:
+        name: "{{ vm_ip }}"
+        groups: my_vm_group 
+
+    
+- name: Install required packages on the VM
+  hosts: my_vm_group
+  remote_user: "{{ admin_username }}"
+  become: true
+  environment:
+    ANSIBLE_HOST_KEY_CHECKING: "False"   
+  tasks:
+
+    - name: Remove existing Node.js and npm
+      apt:
+        name: "{{ item }}"
+        state: absent
+      with_items:
+        - nodejs
+        - npm
+
+    - name: Update Node.js
+      shell: curl -sL https://deb.nodesource.com/setup_{{ nodejs_version }} | sudo -E bash -
+    
+    - name: Install Node.js
+      apt:
+        name: nodejs
+        state: present
+
+    - name: Verify Node.js version
+      command: node --version
+      register: node_version_output
+
+    - debug:
+        var: node_version_output.stdout
+
+
+
+- name: Verify Node.js installation
+  hosts: my_vm_group
+  remote_user: "{{ admin_username }}"
+  become: true
+  environment:
+    ANSIBLE_HOST_KEY_CHECKING: "False"
+  vars:
+          #ansible_shell_type: bash  # Set the shell type to bash
+    NVM_DIR: "$HOME/.nvm"     # Set the correct path to nvm directory
+  tasks:
+    - name: Check Node.js version using nvm
+      shell: |
+        export NVM_DIR={{ NVM_DIR }}
+        [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+        [ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"
+        nvm --version
+      register: nvm_version
+      changed_when: false
+      failed_when: false
+
+
+      
+
+
+

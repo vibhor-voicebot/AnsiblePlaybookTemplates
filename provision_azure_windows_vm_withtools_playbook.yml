@@ -1,0 +1,366 @@
+---
+- name: Create Azure VM and Install Software
+  hosts: localhost
+  gather_facts: False
+  tasks:
+
+    - name: Create Windows Azure VM
+      command: az vm create --resource-group "{{ resource_group }}" --name "{{ vm_name }}" --image "{{ vm_image }}" --admin-username "{{ admin_username }}" --admin-password "{{ admin_password }}" --size "{{ vm_size }}" --location "{{ location }}" --os-disk-caching "ReadWrite" --data-disk-caching "ReadWrite" --nsg-rule "{{ nsg_rule }}" --public-ip-address-dns-name "{{ dns_name }}" --custom-data "$(cat enable_winrm.ps1)" --authentication-type password 
+      register: azure_vm_create_status
+      no_log: true
+
+    - name: Extract public IP address from VM
+      set_fact:
+        parsed_json: "{{ azure_vm_create_status.stdout  | from_json }}"
+      register: parsed_vm_output_json
+      no_log: true
+
+
+    - name: Windows Azure VM Provisioning details
+      ignore_errors: yes
+      debug:
+         msg: | 
+            VM_Details : "{{ azure_vm_create_status.stdout  | from_json }}"
+            StartTime : "{{ azure_vm_create_status.start }}"
+            EndTime : "{{ azure_vm_create_status.end }}"
+            
+    
+
+    - name: Create Network security group for newly created VM
+      command: az network nsg create --resource-group {{ resource_group }} --name {{ nsg_ssh_rulename }}
+      register: vm_create_nsg_output
+      changed_when: false
+      no_log: true
+
+    - name: Network security group details
+      ignore_errors: yes
+      debug:
+         msg: |
+            NSG_Provisioning : "Succeeded"
+            StartTime : "{{ vm_create_nsg_output.start }}"
+            EndTime : "{{ vm_create_nsg_output.end }}"
+
+
+    - name: Allow SSH port in NSG
+      shell: az network nsg rule create --resource-group  "{{ resource_group }}" --nsg-name "{{ nsg_ssh_rulename }}" --name AllowSSH --protocol Tcp --priority 1000 --destination-port-ranges 22 --source-address-prefixes '*' --destination-address-prefixes "{{ parsed_json.publicIpAddress }}" --access Allow      
+      register: nsgallowssh_out
+      no_log: true
+
+    - name: Allow RDP in NSG
+      shell: az network nsg rule create --resource-group  "{{ resource_group }}" --nsg-name "{{ nsg_ssh_rulename }}" --name RDP --protocol Tcp --priority 1001 --destination-port-ranges 3389 --source-address-prefixes '*' --destination-address-prefixes '*' --access Allow
+      register: nsgallowrp_out
+      no_log: true
+
+
+    - name: Added RDP in Network security group
+      ignore_errors: yes
+      debug:
+         msg: |
+            RDP_Provisioning : "{{ nsgallowrp_out.stdout   | from_json | json_query('provisioningState') }}"
+            StartTime : "{{ nsgallowrp_out.start }}"
+            EndTime : "{{ nsgallowrp_out.end }}"
+      
+
+    - name: Allow WINRM in NSG
+      shell: az network nsg rule create --resource-group "{{ resource_group }}" --nsg-name "{{ nsg_ssh_rulename }}" --name AllowWinRM5986 --priority 100 --source-address-prefixes '*' --source-port-ranges '*' --destination-address-prefixes '*' --destination-port-ranges 5986 --access Allow --protocol Tcp --description "Allow inbound WinRM on port 5986"
+      register: nsgwinrm_out
+      no_log: true
+
+    - name: Added WinRM port in Network security group
+      ignore_errors: yes
+      debug:
+         msg: |
+            WINRM_Provisioning : "{{ nsgwinrm_out.stdout   | from_json  | json_query('provisioningState') }}"
+            StartTime : "{{ nsgwinrm_out.start }}"
+            EndTime : "{{ nsgwinrm_out.end }}"
+
+
+    - name: Getting NIC_Id for VM
+      command: az vm show --resource-group {{ resource_group }} --name {{ vm_name }} --query 'networkProfile.networkInterfaces[0].id' --output tsv
+      register: vm_nicid_output
+      changed_when: false
+      no_log: true
+
+    - name: Getting NIC_Name for VM
+      command: az network nic show --resource-group {{ resource_group }} --ids {{ vm_nicid_output.stdout }} --query 'name'  --output tsv
+      register: vm_nicname_output
+      changed_when: false
+      no_log: true
+
+    - name: Set RDP nsg_rule in Netowork security group update for vm_nic
+      command: az network nic update --resource-group {{ resource_group }} --name {{ vm_nicname_output.stdout }} --network-security-group "{{ nsg_ssh_rulename }}"
+      register: vm_nsg_nicrdp_update_output
+      changed_when: false
+      no_log: true
+
+    - name: Setting RDP nsg_rule in Network security group for provisoned Windows VM
+      ignore_errors: yes
+      debug:
+         msg: |
+            RDP_NSGRule_Provisioning : "Succeeded"
+            StartTime : "{{ vm_nsg_nicrdp_update_output.start }}"
+            EndTime : "{{ vm_nsg_nicrdp_update_output.end }}"
+
+
+    - name: Start WinRM listerners for vm_nic
+      command: |
+            az vm extension set \
+            --resource-group "{{ resource_group }}" \
+            --vm-name "{{ vm_name }}" \
+            --name CustomScriptExtension \
+            --publisher Microsoft.Compute \
+            --extension-instance-name winrm-extension \
+            --version 1.9 \
+            --protected-settings '{"commandToExecute": "powershell -ExecutionPolicy Unrestricted -File ConfigureRemotingForAnsible.ps1"}' \
+            --settings '{"fileUris": ["https://raw.githubusercontent.com/varmil/setup-winrm-for-windowsservercore/master/ConfigureRemotingForAnsible.ps1"]}' \
+      register: vm_winrm_https_enable_output
+      no_log: true
+
+- name: Add the new VM to the host group
+  hosts: localhost
+  tasks:
+    - name: Add the new VM to the host group
+      add_host:
+        name: "{{ parsed_json.publicIpAddress  }}"
+        groups: my_winvm_group
+        ansible_host: "{{ parsed_json.publicIpAddress  }}"
+        ansible_user: "{{ admin_username }}"
+        ansible_password: "{{ admin_password }}"
+        ansible_connection: "winrm"
+        ansible_winrm_transport: ntlm 
+        ansible_winrm_server_cert_validation: "ignore"
+      no_log: true  
+
+    - name: winrmconfigureport-5986
+      command: az vm run-command invoke --resource-group  "{{ resource_group }}"  --name "{{ vm_name }}" --command-id RunPowerShellScript --scripts "winrm create winrm/config/Listener?Address=*+Transport=HTTPS '@{Port=\"5986\";Hostname=\"{{ parsed_json.publicIpAddress  }}\";CertificateThumbprint=\"your_cert_thumbprint\"}'"
+      register: winrmconfigureport_out
+      no_log: true   
+
+    - name: Building WinRM config as prepartion to invoke WinRM services and listners
+      ignore_errors: yes
+      debug:
+         msg: |
+            WinRM_Config_Provisioning : "{{ vm_winrm_https_enable_output.stdout   | from_json | json_query('provisioningState') }}"
+            StartTime : "{{ winrmconfigureport_out.start }}"
+            EndTime : "{{ winrmconfigureport_out.end }}"
+
+
+    - name: invoke5986winrm_out
+      command: az vm run-command invoke --resource-group  "{{ resource_group }}"  --name "{{ vm_name }}" --command-id RunPowerShellScript --scripts "New-NetFirewallRule -Name \"WinRM-HTTPS-In-TCP\" -DisplayName \"WinRM HTTPS (TCP-In)\" -Enabled True -Direction Inbound -Protocol TCP -Action Allow -LocalPort 5986"
+      register: invoke5986winrm_out
+      no_log: true
+
+    - name: Invoking WinRM listners on Windows VM to accept incoming packages provisioning calls from controller
+      ignore_errors: yes
+      debug:
+         msg: |
+            WinRM_Invokation_Details : "Provisioning Succeeded"
+            StartTime : "{{ invoke5986winrm_out.start }}"
+            EndTime : "{{ invoke5986winrm_out.end }}"
+      
+
+- name: Install Packages on the Azure VM
+  hosts: my_winvm_group
+  remote_user: "{{ admin_username }}"
+  become: yes
+  become_method: runas
+  become_user: "{{ admin_username }}"
+  environment:
+    ANSIBLE_HOST_KEY_CHECKING: "False"
+  tasks:  
+
+    - name: Install Python
+      win_shell: |
+        # Download Python installer
+        Invoke-WebRequest -Uri 'https://www.python.org/ftp/python/3.9.6/python-3.9.6-amd64.exe' -OutFile 'C:\python-installer.exe'
+
+        # Install Python silently
+        Start-Process -FilePath 'C:\python-installer.exe' -ArgumentList '/quiet InstallAllUsers=1 PrependPath=1' -Wait
+      args:
+        creates: C:\Python39\python.exe
+      no_log: true
+      register: install_python
+
+    - name: Install Node.js
+      win_shell: |
+        # Download Node.js installer
+        Invoke-WebRequest -Uri 'https://nodejs.org/dist/v14.17.6/node-v14.17.6-x64.msi' -OutFile 'C:\nodejs-installer.msi'
+
+        # Install Node.js silently
+        Start-Process -FilePath 'msiexec.exe' -ArgumentList '/i C:\nodejs-installer.msi /qn' -Wait
+      args:
+        creates: C:\Program Files\nodejs\node.exe
+      no_log: true
+      register: install_nodejs
+
+    - name: Install Git
+      win_shell: |
+        # Download Git installer
+        Invoke-WebRequest -Uri 'https://github.com/git-for-windows/git/releases/download/v2.33.0.windows.2/Git-2.33.0.2-64-bit.exe' -OutFile 'C:\git-installer.exe'
+
+        # Install Git silently
+        Start-Process -FilePath 'C:\git-installer.exe' -ArgumentList '/SILENT /NORESTART /CLOSEAPPLICATIONS /RESTARTAPPLICATIONS' -Wait
+      args:
+        creates: C:\Program Files\Git\bin\git.exe
+      no_log: true
+      register: install_git
+
+    - name: Install Kubernetes CLI (kubectl)
+      win_shell: |
+        # Download kubectl executable
+        Invoke-WebRequest -Uri 'https://storage.googleapis.com/kubernetes-release/release/v1.22.2/bin/windows/amd64/kubectl.exe' -OutFile 'C:\kubectl.exe'
+      args:
+        creates: C:\kubectl.exe
+      no_log: true
+      register: install_kubernetes
+
+        #- name: Copy PowerShell script to VM
+        # win_copy:
+        #src: docker_solr_script.ps1
+        # dest: C:\docker_solr_script.ps1
+        #delegate_to: localhost
+        #register: win_copy_out
+
+        #- name: Run PowerShell script to install Docker and start Solr as Docker container
+        #win_shell: |
+        # {{ lookup('file', 'C:\\docker_solr_script.ps1') | trim | to_nice_yaml | tojson | to_nice_json }}
+        #args:
+        #executable: powershell.exe
+        #register: docker_enabled_status
+
+    - name: Create Java installation directory
+      win_file:
+        path: "C:\\Java\\"
+        state: directory
+      no_log: true
+
+
+    - name: Download Java installer
+      win_get_url:
+        url: "https://download.oracle.com/java/20/latest/jdk-20_windows-x64_bin.exe"
+        dest: "C:\\Java\\jdk-20_windows-x64_bin.exe"
+      no_log: true
+
+    - name: Install Java
+      win_shell: "C:\\Java\\jdk-20_windows-x64_bin.exe /s"
+      args:
+        creates: "C:\\Java\\bin"
+      no_log: true
+      register: install_javajdk
+
+    - name: Set JAVA_HOME environment variable
+      win_shell: |
+        [System.Environment]::SetEnvironmentVariable("JAVA_HOME", "C:\\\\Program Files\\\\Java\\\\jdk-20", "Machine")
+      args:
+        creates: "C:\\Java\\bin"
+      no_log: true
+
+    - name: Download Apache Solr
+      win_get_url:
+        url: "https://archive.apache.org/dist/lucene/solr/8.11.0/solr-8.11.0.zip"
+        dest: C:\solr.zip
+      no_log: true
+
+
+    - name: Delete existing disruptor-3.4.2.jar file
+      win_file:
+        path: "C:\\solr-8.11.0\\server\\lib\\ext\\disruptor-3.4.2.jar"
+        state: absent
+      ignore_errors: yes
+      no_log: true
+
+    - name: Extract Apache Solr
+      win_unzip:
+        src: C:\solr.zip
+        dest: C:\
+      ignore_errors: yes
+      no_log: true
+
+    - name: Set Solr Home Environment Variable
+      win_shell: |
+        [Environment]::SetEnvironmentVariable("SOLR_HOME", "C:\solr-8.11.0", "Machine")
+      no_log: true
+      register: set_solr_home
+
+    - name: Start Apache Solr
+      win_shell: |
+        cd C:\solr-8.11.0\bin
+        .\solr start -p 8983 -s C:\solr-8.11.0\server\solr 2>&1
+      ignore_errors: yes
+      async: 300
+      poll: 0
+      register: task_result
+      no_log: true
+      register: start_solr
+
+    - name: Wait for 5 seconds
+      async_status:
+          jid: "{{ task_result.ansible_job_id }}"
+      register: job_result
+      until: job_result.finished
+      retries: 5
+      delay: 1
+      ignore_errors: yes
+      no_log: true
+
+
+    - name: Checking if Python is installed
+      win_stat:
+        path: C:\Python39\python.exe
+      register: python_installed
+      no_log: true
+
+
+    - name: Checking if Node.js is installed
+      win_stat:
+        path: C:\Program Files\nodejs\node.exe
+      register: nodejs_installed
+      no_log: true
+
+    - name: Checking if kubectl is installed
+      win_stat:
+        path: C:\kubectl.exe
+      register: kubectl_installed
+      no_log: true
+
+    - name: Checking if Git is installed
+      win_stat:
+        path: C:\Program Files\Git\bin\git.exe
+      register: git_installed
+      no_log: true
+
+    - name: Check if Solr is running
+      win_shell: "Invoke-RestMethod -Uri http://localhost:8983/solr/ -Method Get"
+      register: solr_running
+      ignore_errors: yes
+      no_log: true
+
+
+
+    - name: Generating Packages Installed (Summarized Report)
+      ignore_errors: yes
+      debug:
+        msg: |
+          Python Installation StartTime: {{ install_python.start }}      
+          Python installed: {{ python_installed.stat.exists }}
+          Python Installation EndTime: {{ install_python.end }}
+
+          NodeJS Installation StartTime: {{ install_python.start }}
+          NodeJS installed: {{ nodejs_installed.stat.exists }}
+          NodeJS Installation EndTime: {{ install_python.end }}
+
+          Kubernetes Installation StartTime: {{ install_python.end }}
+          Kubernetes installed: {{ kubectl_installed.stat.exists }}
+          Kubernetes Installation EndTime: {{ install_javajdk.start }}
+
+          Git Installation StartTime: {{ install_javajdk.start }}
+          Git installed: {{ git_installed.stat.exists }}
+          Git Installation EndTime: {{ install_javajdk.end }}
+
+          JDK Installation StartTime: {{ install_javajdk.start }}
+          JDK Installation EndTime: {{ install_javajdk.end }}
+  
+          Solr Installation StartTime: {{ set_solr_home.start }}
+          Solr is running: {{ solr_running.rc == 0 }}
+          Solr Installation EndTime: {{ set_solr_home.end }}          
+      

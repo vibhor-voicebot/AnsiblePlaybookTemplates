@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, json, jsonify
+from flask import Flask, render_template, request, json, jsonify, url_for, send_file
 import re
 import requests
 import subprocess
@@ -11,6 +11,13 @@ app = Flask(__name__)
 #english_bot = ChatBot("Chatterbot", storage_adapter="chatterbot.storage.SQLStorageAdapter")
 #trainer = ChatterBotCorpusTrainer(english_bot)
 #trainer.train("chatterbot.corpus.english")
+
+@app.route('/get_file')
+def get_file():
+    # Replace 'path_to_your_file' with the actual path to your file on the server
+    file_path = request.args.get("file_path")
+    #return "Ansible Pybook template can be found here: " + file_path
+    return send_file(file_path, as_attachment=False)
 
 
 def create_jira_issue(issue_data, jira_base_url, username, password):
@@ -55,6 +62,28 @@ def get_bot_response():
         #return (ansibleOutput)
         #ansibleOutputInJSON = json.dumps(ansibleOutput)
         return (ansibleOutputForView)
+
+    if ("execute terraform" in userText):
+        nodeversion = ""
+        vmip = ""
+        cmdexcutetobesplit = str(userText).split("execute terraform ")[1]
+        cmdexcutetobesplittedlist = cmdexcutetobesplit.split(" ")
+
+        for eachitem in cmdexcutetobesplittedlist :
+            if "nodejs_ver" in eachitem :
+                nodeversion = str(str(eachitem).split("=")[1]).strip()
+            if "vm_ip" in eachitem :
+                vmip = str(eachitem).split("=")[1].strip()
+
+        cmdexcute1 = "bash excuteterraform.sh "+nodeversion+ " "+vmip
+        print (cmdexcute1)
+        terraOut = subprocess.Popen(cmdexcute1, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
+        terraOutPre = terraOut.stdout.read().strip().decode('utf-8').replace('\\n', '\n')
+        print(terraOutPre)
+        terraOutputForView = terraOutPre.replace('\n', '<br/>')
+
+        return (terraOutputForView)
+
 
     if ("jira" in userText):
         issue_type = ""
@@ -158,6 +187,21 @@ def get_bot_response():
          playbook_filename = str(response_list).split("ansible-playbook ")[1].split()[0]
          print("playbook_filename-->")
          print(playbook_filename)
+         orig_response_list_dispatch = [
+         item.replace('\n', '<br/>')
+         for item in orig_response_list
+         ]
+         file_hyperlink = url_for('get_file', file_path=playbook_filename)
+         return 'Download Ansible Playbook Template using <b><a href="https://genpactaiservice.azurewebsites.net' + file_hyperlink+'" target="_blank">link</a></b>, <br/> <b>Playbook command for execution: </b></br>'+"".join(orig_response_list_dispatch)
+
+    if ("terraform" in str(response_list)):
+         orig_response_list_dispatch = [
+         item.replace('\n', '<br/>')
+         for item in orig_response_list
+         ]        
+         file_hyperlink = url_for('get_file', file_path="my_terraform_module/main.tf")
+         return 'Download Terraform main.tf module using <b><a href="https://genpactaiservice.azurewebsites.net' + file_hyperlink+'" target="_blank">link</a></b>, <br/> <b>Terraform command for execution: </b></br>'+"".join(orig_response_list_dispatch)
+
     #orig_response_list_dispatch = orig_response_list.replace('\n', '<br/>') 
     orig_response_list_dispatch = [
     item.replace('\n', '<br/>')

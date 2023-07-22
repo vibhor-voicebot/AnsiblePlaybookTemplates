@@ -1,0 +1,72 @@
+---
+
+- name: Add the new VM to the host group
+  hosts: localhost
+  tasks:
+    - name: Add the new VM to the host group
+      add_host:
+        name: "20.232.185.72"
+        groups: my_winvm_group
+        ansible_host: "20.232.185.72"
+        ansible_user: "{{ admin_username }}"
+        ansible_password: "{{ admin_password }}"
+        ansible_connection: "winrm"
+        ansible_winrm_transport: ntlm 
+        ansible_winrm_server_cert_validation: "ignore"
+
+
+
+- name: Install Packages on the Azure VM
+  hosts: my_winvm_group
+  remote_user: "{{ admin_username }}"
+  become: yes
+  become_method: runas
+  become_user: "{{ admin_username }}"
+  environment:
+    ANSIBLE_HOST_KEY_CHECKING: "False"
+  tasks:  
+
+    - name: Download Apache Solr
+      win_get_url:
+        url: "https://archive.apache.org/dist/lucene/solr/8.11.0/solr-8.11.0.zip"
+        dest: C:\solr.zip
+
+    - name: Delete existing disruptor-3.4.2.jar file
+      win_file:
+        path: "C:\\solr-8.11.0\\server\\lib\\ext\\disruptor-3.4.2.jar"
+        state: absent
+      ignore_errors: yes
+
+    - name: Extract Apache Solr
+      win_unzip:
+        src: C:\solr.zip
+        dest: C:\
+      ignore_errors: yes
+
+    - name: Set Solr Home Environment Variable
+      win_shell: |
+        [Environment]::SetEnvironmentVariable("SOLR_HOME", "C:\solr-8.11.0", "Machine")
+
+    - name: Start Apache Solr
+      win_shell: |
+        cd C:\solr-8.11.0\bin
+        .\solr start -p 8983 -s C:\solr-8.11.0\server\solr 2>&1
+      ignore_errors: yes 
+      async: 300
+      poll: 0
+      register: task_result
+
+    - name: Wait for 5 seconds
+      async_status:
+          jid: "{{ task_result.ansible_job_id }}"
+      register: job_result
+      until: job_result.finished
+      retries: 5
+      delay: 1
+      ignore_errors: yes
+
+
+    - name: Generating Summarized Report
+      debug:
+        msg: |
+          Solr is running: {{ solr_running.rc == 0 }}

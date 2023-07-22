@@ -10,3 +10,5 @@ azure-cli-core
 azure-storage-blob
 azure-cli
 ansible==4.10.0
+pywinrm
+requests

@@ -1,0 +1,250 @@
+---
+- name: Create Azure Linux VM and install dependencies
+  hosts: localhost
+  vars: 
+     kubectl_version_output_g: ""
+     python_version_output_g: ""
+     docker_vesion_output_g: ""
+     nvm_version_output_g: ""
+
+  tasks:
+    - name: Create resource group
+      command: az group create --name "{{ resource_group }}" --location "{{ location }}"
+      register: rg_result
+      changed_when: rg_result.rc == 0
+
+    - name: Generate sshkeygen
+      command: echo -n yes | ssh-keygen -t rsa -b 4096  -f ~/.ssh/id_rsa -N ""
+      register: sshkeye_output
+
+    - name: Read sshkeygen publickkey
+      command: cat ~/.ssh/id_rsa.pub
+      register: sshrsapublickeyvalue_output
+
+    - name: Reading RSA_PrivateKey
+      command: cat ~/.ssh/id_rsa
+      register: sshrsaprivatekeyvalue_output
+
+    - name: Sending SSH privatekey for sh to azurevmm for user
+      command: "python sendmail.py \"{{ sshrsaprivatekeyvalue_output.stdout }}\""
+      
+
+    - name: Create VM
+      command: az vm create --resource-group {{ resource_group }} --name {{ vm_name }} --image {{ vm_image }}  --admin-username {{ admin_username }} --size {{ vm_size }} --ssh-key-values "~/.ssh/id_rsa.pub"  #--generate-ssh-keys
+      register: vm_creation_output
+      changed_when: false
+
+
+    - name: Extract public IP address from VM
+      set_fact:
+        parsed_json: "{{ vm_creation_output.stdout  | from_json }}"
+      register: parsed_vm_output_json
+
+    - name: Getting NIC_Id for VM
+      command: az vm show --resource-group {{ resource_group }} --name {{ vm_name }} --query 'networkProfile.networkInterfaces[0].id' --output tsv
+      register: vm_nicid_output
+      changed_when: false
+
+    - name: Getting NIC_Name for VM
+      command: az network nic show --resource-group {{ resource_group }} --ids {{ vm_nicid_output.stdout }} --query 'name'  --output tsv
+      register: vm_nicname_output
+      changed_when: false
+      
+    - name: Set VM hostvars
+      set_fact:
+        vm_ip: "{{ parsed_json.publicIpAddress  }}"
+        vm_username: "{{ admin_username }}"
+        #vm_password: "{{  admin_password  }}"
+        nic_name: "{{ vm_nicname_output.stdout }}"
+        ansible_ssh_private_key_file: ""
+
+    - name: Get public IP address of the VM
+      command: az vm show -d --resource-group {{ resource_group }} --name {{ vm_name }} --query publicIps --output tsv
+      register: vm_public_ip
+      changed_when: false
+
+    - name: Create Network security group for newly created VM
+      command: az network nsg create --resource-group {{ resource_group }} --name {{ nsg }} 
+      register: vm_create_nsg_output
+      changed_when: false
+
+    - name: Set Network security group and llowSSH protool for remote ssh from asible controller
+      command: az network nsg rule create -g {{ resource_group }} --nsg-name {{ nsg }} --name SSHRule --priority 100 --protocol Tcp --direction Inbound --source-address-prefix "*" --source-port-range "*" --destination-address-prefix "*" --destination-port-range 22 --access Allow
+      register: vm_allowssh_output
+      changed_when: false
+
+    - name: Set Netowork security group update for vm_nic
+      command: az network nic update --resource-group {{ resource_group }} --name {{ nic_name }} --network-security-group {{ nsg }}
+      register: vm_nsg_nic_update_output
+      changed_when: false
+
+
+- name: Add the new VM to the host group
+  hosts: localhost
+  tasks:
+    - name: Add the new VM to the host group
+      add_host:
+        name: "{{ vm_ip }}"
+        groups: my_vm_group 
+
+        #az network nsg create --resource-group {{ resource_group }} --name my_vm_nsg && az network nsg rule create -g {{ resource_group }} --nsg-name my_vm_nsg --name SSHRule --priority 100 --protocol Tcp --direction Inbound --source-address-prefix "*" --source-port-range "*" --destination-address-prefix "*" --destination-port-range 22 --access Allow && az network nic update --resource-group {{ resource_group }} --name {{ vm_ip }} --network-security-group my_vm_nsg
+
+
+        #- name: Wait for SSH to be available
+        #hosts: my_vm_group
+        #environment:
+        #ANSIBLE_HOST_KEY_CHECKING: "False" 
+        #tasks:
+        #- name: Wait for SSH to be available
+        #wait_for:
+        #host: "{{ vm_ip }}"
+        #port: 22
+        #delay: 60
+        #timeout: 300
+
+
+- name: Install required packages on the VM
+  hosts: my_vm_group
+  remote_user: "{{ admin_username }}"
+  become: true
+  environment:
+    ANSIBLE_HOST_KEY_CHECKING: "False"   
+  tasks:
+        - name: Install Python
+          raw: apt-get update && apt-get install -y python
+
+        - name: Install Docker
+          raw: curl -fsSL https://get.docker.com -o get-docker.sh && sh get-docker.sh && docker --version && docker
+
+        - name: Install Node.js
+          raw: curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.0/install.sh | bash  && export NVM_DIR="$HOME/.nvm" && [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh" && [ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"  && nvm --version && nvm install --lts && nvm use --lts 
+
+        - name: Install kubectl
+          raw: curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl" && chmod +x kubectl && mv kubectl /usr/local/bin/ && kubectl version --client && kubectl
+
+
+
+- name: Verify Python installation
+  hosts: my_vm_group
+  remote_user: "{{ admin_username }}"
+  become: true
+  environment:
+    ANSIBLE_HOST_KEY_CHECKING: "False" 
+  tasks:
+        - name: Check Python version
+          command: python3 --version
+          register: python_version_output
+          failed_when: python_version_output.rc != 0 or "Python 3" not in python_version_output.stdout
+
+        - name: Set python_version_output
+          set_fact:
+            python_version_output_g: "{{ python_version_output.stdout  }}"
+
+
+- name: Verify Docker installation
+  hosts: my_vm_group
+  remote_user: "{{ admin_username }}"
+  become: true
+  environment:
+    ANSIBLE_HOST_KEY_CHECKING: "False" 
+  tasks:
+        - name: Check Docker version
+          command: docker --version
+          register: docker_version_output
+          failed_when: docker_version_output.rc != 0
+
+        - name: Set docker_version_output
+          set_fact:
+            docker_version_output_g: "{{ docker_version_output.stdout  }}"
+
+
+
+- name: Verify Node.js installation
+  hosts: my_vm_group
+  remote_user: "{{ admin_username }}"
+  become: true
+  environment:
+    ANSIBLE_HOST_KEY_CHECKING: "False"
+  vars:
+          #ansible_shell_type: bash  # Set the shell type to bash
+    NVM_DIR: "$HOME/.nvm"     # Set the correct path to nvm directory
+  tasks:
+    - name: Check Node.js version using nvm
+      shell: |
+        export NVM_DIR={{ NVM_DIR }}
+        [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+        [ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"
+        nvm --version
+      register: nvm_version
+      changed_when: false
+      failed_when: false
+
+    - name: Set nvm_version_output
+      set_fact:
+        nvm_version_output_g: "{{ nvm_version.stdout  }}"
+
+      
+
+
+- name: Verify kubectl installation
+  hosts: my_vm_group
+  remote_user: "{{ admin_username }}"
+  become: true
+  environment:
+    ANSIBLE_HOST_KEY_CHECKING: "False" 
+  tasks:
+        - name: Check kubectl version
+          command: kubectl version --client
+          register: kubectl_version_output
+          failed_when: kubectl_version_output.rc != 0
+
+
+        - name: Set kubectl_version_output
+          set_fact:
+            kubectl_version_output_g: "{{ kubectl_version_output.stdout  }}"
+
+
+- name: Install SolrDB on Azure VM as a Docker container
+  hosts: my_vm_group
+  remote_user: "{{ admin_username }}"
+  become: true
+  environment:
+    ANSIBLE_HOST_KEY_CHECKING: "False"
+  gather_facts: no
+  tasks:
+    - name: Start the Docker service
+      become: yes
+      service:
+        name: docker
+        state: started
+      tags: docker
+
+    - name: Remove already running Solr container (if any)
+      become: yes
+      command: docker remove -f {{ docker_containername }}
+      register: solr_remove_output
+
+
+    - name: Start the Solr container as docker
+      become: yes
+      command: docker run -d --name={{ docker_containername }} -p {{ docker_port }}:{{ docker_port }} geerlingguy/solr:latest /opt/solr/bin/solr start -p {{ docker_port }} -f -force
+      register: solr_output
+
+
+- name: "******Generating overall tools Installation Report*****"
+  hosts: my_vm_group
+  remote_user: "{{ admin_username }}"
+  become: true
+  environment:
+    ANSIBLE_HOST_KEY_CHECKING: "False"
+  tasks:
+    - name: Display overall tools Installation Report
+      debug:
+        msg: |
+          ***** Overall Tools Installation Report *****
+          Python Installation: {{ python_version_output_g }}
+          Docker Installation: {{ docker_version_output_g }}
+          Node.js Installation: {{ nvm_version_output_g }}
+          kubectl Installation: {{ kubectl_version_output_g }}
+          SolrDB as Docker Container (ContainerID): {{ solr_output.stdout }}
+

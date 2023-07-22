@@ -104,5 +104,5 @@ function randomstring(length = 20) {
  * Set initial bot message to the screen for the user.
  */
 $(window).on('load', function () {
-	showBotMessage('Hello there! Type in a message.');
+	showBotMessage('Hello there! I am your Knowledge assistant for MSIM');
 });
